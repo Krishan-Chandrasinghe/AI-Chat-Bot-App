@@ -14,17 +14,60 @@ const chatHandler = async (req: Request, res: Response) => {
     }
 
     try {
-        const ollamaResponse = await axios.post(
-            `${OLLAMA_API}`,
+        // Set Header Options for streaming message
+        res.setHeader('Content-Type', 'text/plain');
+        res.setHeader('Transfer-Encoding', 'chunked')
+
+        const ollamaStreamResponse = await fetch(
+            OLLAMA_API,
             {
-                model: 'gemma:2b',
-                prompt: prompt,
-                stream: false,
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: 'gemma:2b',
+                    prompt: prompt,
+                    stram: true
+                })
             }
         );
 
-        const responseText: string = ollamaResponse.data.response;
-        res.json({ response: responseText });
+        if (ollamaStreamResponse.body) {
+            const reader = ollamaStreamResponse.body.getReader();
+            const decorder = new TextDecoder();
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) {
+                    break;
+                }
+
+                const chunk = decorder.decode(value, { stream: true });
+
+                const lines = chunk.split('\n');
+
+                for (const line of lines) {
+                    if (line.trim() === '') continue;
+
+                    try {
+                        const data = JSON.parse(line);
+                        const content = data.response || ''; 
+
+                        if (content) {
+                            res.write(content); 
+                        }
+
+                        if (data.done) {
+                            res.end();
+                            return;
+                        }
+                    } catch (e) {
+                        console.error("JSON Parsing Error:", e);
+                    }
+                }
+            }
+        }
 
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred.';
