@@ -60,18 +60,35 @@ const Chat: React.FC = () => {
                     if (done) break;
 
                     const chunk = decoder.decode(value, { stream: true });
-                    accumulatedContent += chunk;
 
-                    setMessages((prevMessages) => {
-                        const lastMessageIndex = prevMessages.length - 1;
-                        const updatedMessages = [...prevMessages];
+                    const lines = chunk.split('\n');
 
-                        updatedMessages[lastMessageIndex] = {
-                            ...updatedMessages[lastMessageIndex],
-                            content: accumulatedContent,
-                        };
-                        return updatedMessages;
-                    });
+                    for (const line of lines) {
+
+                        if (line.startsWith('data:')) {
+
+                            const sseData = line.substring(5);
+
+                            if (sseData === '[DONE]') {
+                                reader.releaseLock();
+                                setLoading(false);
+                                return;
+                            }
+
+                            accumulatedContent += sseData;
+
+                            setMessages((prevMessages) => {
+                                const lastMessageIndex = prevMessages.length - 1;
+                                const updatedMessages = [...prevMessages];
+
+                                updatedMessages[lastMessageIndex] = {
+                                    ...updatedMessages[lastMessageIndex],
+                                    content: accumulatedContent,
+                                };
+                                return updatedMessages;
+                            });
+                        }
+                    }
                 }
 
             } else {
@@ -103,7 +120,7 @@ const Chat: React.FC = () => {
                         </div>
                     </div>
                 )}
-                
+
                 {messages.map((message) => (
                     <div
                         key={message.id}

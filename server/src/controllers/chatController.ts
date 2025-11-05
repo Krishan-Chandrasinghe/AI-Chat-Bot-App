@@ -14,8 +14,9 @@ const chatHandler = async (req: Request, res: Response) => {
 
     try {
         // Set Header Options for streaming message
-        res.setHeader('Content-Type', 'text/plain');
-        res.setHeader('Transfer-Encoding', 'chunked')
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.header('Cache-Control', 'no-cache');
+        res.header('Connection', 'keep=alive')
 
         const ollamaStreamResponse = await fetch(
             OLLAMA_API,
@@ -27,7 +28,7 @@ const chatHandler = async (req: Request, res: Response) => {
                 body: JSON.stringify({
                     model: 'gemma:2b',
                     prompt: prompt,
-                    stream:true
+                    stream: true
                 })
             }
         );
@@ -52,13 +53,14 @@ const chatHandler = async (req: Request, res: Response) => {
 
                     try {
                         const data = JSON.parse(line);
-                        const content = data.response || ''; 
+                        const content = data.response || '';
 
                         if (content) {
-                            res.write(content); 
+                            res.write(`data: ${content}\n\n`);
                         }
 
                         if (data.done) {
+                            res.write(`data:[DONE]\n\n`)
                             res.end();
                             return;
                         }
