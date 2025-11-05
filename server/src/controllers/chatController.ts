@@ -1,4 +1,3 @@
-import axios from "axios";
 import type { Request, Response } from "express"
 import { OLLAMA_API } from "../constants/env.ts";
 
@@ -10,7 +9,7 @@ const chatHandler = async (req: Request, res: Response) => {
     const { prompt } = req.body as ChatRequest;
 
     if (!prompt) {
-        return res.status(400).send({ error: 'කරුණාකර prompt එකක් එවන්න.' });
+        return res.status(400).send({ error: 'Please send a prompt!' });
     }
 
     try {
@@ -28,10 +27,11 @@ const chatHandler = async (req: Request, res: Response) => {
                 body: JSON.stringify({
                     model: 'gemma:2b',
                     prompt: prompt,
-                    stram: true
+                    stream:true
                 })
             }
         );
+
 
         if (ollamaStreamResponse.body) {
             const reader = ollamaStreamResponse.body.getReader();
