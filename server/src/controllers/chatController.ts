@@ -1,4 +1,3 @@
-import axios from "axios";
 import type { Request, Response } from "express"
 import { OLLAMA_API } from "../constants/env.ts";
 
@@ -10,21 +9,67 @@ const chatHandler = async (req: Request, res: Response) => {
     const { prompt } = req.body as ChatRequest;
 
     if (!prompt) {
-        return res.status(400).send({ error: 'කරුණාකර prompt එකක් එවන්න.' });
+        return res.status(400).send({ error: 'Please send a prompt!' });
     }
 
     try {
-        const ollamaResponse = await axios.post(
-            `${OLLAMA_API}`,
+        // Set Header Options for streaming message
+        res.setHeader('Content-Type', 'text/event-stream');
+        res.header('Cache-Control', 'no-cache');
+        res.header('Connection', 'keep=alive')
+
+        const ollamaStreamResponse = await fetch(
+            OLLAMA_API,
             {
-                model: 'gemma:2b',
-                prompt: prompt,
-                stream: false,
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                    model: 'gemma:2b',
+                    prompt: prompt,
+                    stream: true
+                })
             }
         );
 
-        const responseText: string = ollamaResponse.data.response;
-        res.json({ response: responseText });
+
+        if (ollamaStreamResponse.body) {
+            const reader = ollamaStreamResponse.body.getReader();
+            const decorder = new TextDecoder();
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) {
+                    break;
+                }
+
+                const chunk = decorder.decode(value, { stream: true });
+
+                const lines = chunk.split('\n');
+
+                for (const line of lines) {
+                    if (line.trim() === '') continue;
+
+                    try {
+                        const data = JSON.parse(line);
+                        const content = data.response || '';
+
+                        if (content) {
+                            res.write(`data: ${content}\n\n`);
+                        }
+
+                        if (data.done) {
+                            res.write(`data:[DONE]\n\n`)
+                            res.end();
+                            return;
+                        }
+                    } catch (e) {
+                        console.error("JSON Parsing Error:", e);
+                    }
+                }
+            }
+        }
 
     } catch (error) {
         const errorMessage = error instanceof Error ? error.message : 'Unknown error occurred.';

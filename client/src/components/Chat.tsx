@@ -1,7 +1,6 @@
 // src/components/Chat.tsx
 
 import React, { useState, useEffect, useRef, type FormEvent } from 'react';
-import axios from 'axios';
 import type { Message } from '../types';
 
 
@@ -32,28 +31,72 @@ const Chat: React.FC = () => {
             content: input,
         };
 
-        const newMessages = [...messages, userMessage];
-        setMessages(newMessages);
+        const initialLlmMessage: Message = {
+            id: Date.now().toString() + '_llm',
+            role: 'assistant',
+            content: '',
+        }
+
+        setMessages((prevMessages) => [...prevMessages, userMessage, initialLlmMessage]);
         setInput('');
         setLoading(true);
 
         try {
-            const response = await axios.post(import.meta.env.VITE_BACKEND_URL, {
-                prompt: userMessage.content
+            const response = await fetch('http://localhost:3001/api/chat', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({ prompt: userMessage.content }),
             });
 
-            const llmResponseContent: string = response.data.response;
+            if (response.body) {
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+                let accumulatedContent = '';
 
-            const llmMessage: Message = {
-                id: Date.now().toString() + '_llm',
-                role: 'assistant',
-                content: llmResponseContent,
-            };
+                while (true) {
+                    const { done, value } = await reader.read();
+                    if (done) break;
 
-            setMessages((prevMessages) => [...prevMessages, llmMessage]);
+                    const chunk = decoder.decode(value, { stream: true });
+
+                    const lines = chunk.split('\n');
+
+                    for (const line of lines) {
+
+                        if (line.startsWith('data:')) {
+
+                            const sseData = line.substring(5);
+
+                            if (sseData === '[DONE]') {
+                                reader.releaseLock();
+                                setLoading(false);
+                                return;
+                            }
+
+                            accumulatedContent += sseData;
+
+                            setMessages((prevMessages) => {
+                                const lastMessageIndex = prevMessages.length - 1;
+                                const updatedMessages = [...prevMessages];
+
+                                updatedMessages[lastMessageIndex] = {
+                                    ...updatedMessages[lastMessageIndex],
+                                    content: accumulatedContent,
+                                };
+                                return updatedMessages;
+                            });
+                        }
+                    }
+                }
+
+            } else {
+                throw new Error("Response body is null");
+            }
 
         } catch (error) {
-            console.error("Chat API Call Failed:", error);
+            console.error("Streaming API Call Failed:", error);
             setMessages((prevMessages) => [
                 ...prevMessages,
                 { id: Date.now().toString() + '_err', role: 'assistant', content: `Something went wrong. Ask again...` }
@@ -70,6 +113,14 @@ const Chat: React.FC = () => {
             </h1>
 
             <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 max-w-4xl w-full mx-auto" ref={messagesEndRef}>
+                {loading && !messages && (
+                    <div className="flex justify-start">
+                        <div className="max-w-xs sm:max-w-md lg:max-w-lg p-3 rounded-lg shadow-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-tl-none animate-pulse">
+                            <strong className="font-semibold block mb-1">AI Buddy:</strong> Thinking... 💬
+                        </div>
+                    </div>
+                )}
+
                 {messages.map((message) => (
                     <div
                         key={message.id}
@@ -86,13 +137,6 @@ const Chat: React.FC = () => {
                     </div>
                 ))}
 
-                {loading && (
-                    <div className="flex justify-start">
-                        <div className="max-w-xs sm:max-w-md lg:max-w-lg p-3 rounded-lg shadow-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100 rounded-tl-none animate-pulse">
-                            <strong className="font-semibold block mb-1">AI Buddy:</strong> Thinking... 💬
-                        </div>
-                    </div>
-                )}
             </div>
 
             <form onSubmit={handleSubmit} className="p-4 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700 sticky bottom-0 z-10">
