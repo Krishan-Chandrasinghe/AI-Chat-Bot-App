@@ -32,9 +32,6 @@ const Chat: React.FC = () => {
 
 
         socket.on('streamChunk', (data: { content: string, id: string }) => {
-            console.log(data.content);
-            console.log("data id: ", data.id)
-            console.log("llm id: ", llmMessageIdRef.current)
             if (data.id === llmMessageIdRef.current) {
                 setMessages(prevMessages => {
                     const lastMessageIndex = prevMessages.length - 1;
@@ -63,7 +60,6 @@ const Chat: React.FC = () => {
         });
 
         return () => {
-            console.log("Socket dis clientssss")
             socket.off('streamChunk')
             socket.off('streamDone')
             socket.off('chatError')
@@ -97,7 +93,6 @@ const Chat: React.FC = () => {
         const socket = socketRef.current;
 
         if (socket) {
-            console.log(`Client prompt: ${input} \nmessageID: ${initialLlmMessage.id}`);
             socket.emit('sendMessage', { prompt: input, messageId: initialLlmMessage.id });
         }
 

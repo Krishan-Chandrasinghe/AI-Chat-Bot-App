@@ -19,7 +19,6 @@ const socketHandler = (httpServer: HttpServer) => {
 
         socket.on('sendMessage', async (data: { prompt: string, messageId: string }) => {
             const { prompt, messageId } = data;
-            console.log(`Received message from ${socket.id}: ${prompt} \n ${messageId}`);
 
             // Ollama Stream Logic
             try {
@@ -55,7 +54,6 @@ const socketHandler = (httpServer: HttpServer) => {
                                 const content = data.response || '';
 
                                 if (content) {
-                                    console.log(content, "\n")
                                     socket.emit('streamChunk', { content: content, id: messageId });
                                 }
 
