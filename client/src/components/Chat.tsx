@@ -1,25 +1,77 @@
-// src/components/Chat.tsx
-
 import React, { useState, useEffect, useRef, type FormEvent } from 'react';
 import type { Message } from '../types';
+import { io, type Socket } from 'socket.io-client'
 
 
 const Chat: React.FC = () => {
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState<string>('');
     const [loading, setLoading] = useState<boolean>(false);
-
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const socketRef = useRef<Socket | null>(null);
 
-    const scrollToBottom = () => {
+    const llmMessageIdRef = useRef<string | null>(null);
+
+    useEffect(() => {
         if (messagesEndRef.current) {
             messagesEndRef.current.scrollTop = messagesEndRef.current.scrollHeight;
         }
-    };
+    }, [messages]);
 
     useEffect(() => {
-        scrollToBottom();
-    }, [messages]);
+        if (!socketRef.current) {
+            socketRef.current = io(import.meta.env.VITE_BACKEND_URL, {
+                autoConnect: false,
+            });
+        }
+
+        const socket = socketRef.current;
+        const connections = socket.connect();
+
+        if (connections) console.log("Connected to the server.")
+
+
+        socket.on('streamChunk', (data: { content: string, id: string }) => {
+            console.log(data.content);
+            console.log("data id: ", data.id)
+            console.log("llm id: ", llmMessageIdRef.current)
+            if (data.id === llmMessageIdRef.current) {
+                setMessages(prevMessages => {
+                    const lastMessageIndex = prevMessages.length - 1;
+                    const updatedMessages = [...prevMessages];
+
+                    updatedMessages[lastMessageIndex] = {
+                        ...updatedMessages[lastMessageIndex],
+                        content: updatedMessages[lastMessageIndex].content + data.content,
+                    };
+                    return updatedMessages;
+                });
+            }
+        });
+
+        socket.on('streamDone', (id: string) => {
+            if (id === llmMessageIdRef.current) {
+                setLoading(false);
+                llmMessageIdRef.current=null;
+            }
+        });
+
+        socket.on('chatError', (error: string) => {
+            setLoading(false);
+            llmMessageIdRef.current=null;
+            console.error('Socket Error:', error);
+        });
+
+        return () => {
+            console.log("Socket dis clientssss")
+            socket.off('streamChunk')
+            socket.off('streamDone')
+            socket.off('chatError')
+            socket.disconnect();
+            socketRef.current = null;
+            llmMessageIdRef.current = null;
+        };
+    }, []);
 
     const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
         e.preventDefault();
@@ -38,72 +90,17 @@ const Chat: React.FC = () => {
         }
 
         setMessages((prevMessages) => [...prevMessages, userMessage, initialLlmMessage]);
+        llmMessageIdRef.current=initialLlmMessage.id;
         setInput('');
         setLoading(true);
 
-        try {
-            const response = await fetch('http://localhost:3001/api/chat', {
-                method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
-                body: JSON.stringify({ prompt: userMessage.content }),
-            });
+        const socket = socketRef.current;
 
-            if (response.body) {
-                const reader = response.body.getReader();
-                const decoder = new TextDecoder();
-                let accumulatedContent = '';
-
-                while (true) {
-                    const { done, value } = await reader.read();
-                    if (done) break;
-
-                    const chunk = decoder.decode(value, { stream: true });
-
-                    const lines = chunk.split('\n');
-
-                    for (const line of lines) {
-
-                        if (line.startsWith('data:')) {
-
-                            const sseData = line.substring(5);
-
-                            if (sseData === '[DONE]') {
-                                reader.releaseLock();
-                                setLoading(false);
-                                return;
-                            }
-
-                            accumulatedContent += sseData;
-
-                            setMessages((prevMessages) => {
-                                const lastMessageIndex = prevMessages.length - 1;
-                                const updatedMessages = [...prevMessages];
-
-                                updatedMessages[lastMessageIndex] = {
-                                    ...updatedMessages[lastMessageIndex],
-                                    content: accumulatedContent,
-                                };
-                                return updatedMessages;
-                            });
-                        }
-                    }
-                }
-
-            } else {
-                throw new Error("Response body is null");
-            }
-
-        } catch (error) {
-            console.error("Streaming API Call Failed:", error);
-            setMessages((prevMessages) => [
-                ...prevMessages,
-                { id: Date.now().toString() + '_err', role: 'assistant', content: `Something went wrong. Ask again...` }
-            ]);
-        } finally {
-            setLoading(false);
+        if (socket) {
+            console.log(`Client prompt: ${input} \nmessageID: ${initialLlmMessage.id}`);
+            socket.emit('sendMessage', { prompt: input, messageId: initialLlmMessage.id });
         }
+
     };
 
     return (
