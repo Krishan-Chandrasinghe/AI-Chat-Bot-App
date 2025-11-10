@@ -15,11 +15,9 @@ app.use(cors({
 app.use(express.json());
 
 const httpServer = http.createServer(app);
-const io = socketHandler(httpServer);
-
 socketHandler(httpServer);
 
-app.get("/", async (req, res, next) => {
+app.get("/", async (req, res) => {
     return res.status(200).send("Hello, Welcome to Ollama API Server.");
 });
 
