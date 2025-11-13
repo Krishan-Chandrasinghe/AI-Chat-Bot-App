@@ -1,6 +1,7 @@
 import { Server } from "socket.io"
 import { Server as HttpServer } from 'http'
 import { FRONTEND_URL } from "../constants/env.ts"
+import type { Message, OllamaMessage } from "../types/types.ts";
 
 const socketHandler = (httpServer: HttpServer) => {
     const io = new Server(httpServer, {
@@ -17,17 +18,22 @@ const socketHandler = (httpServer: HttpServer) => {
             console.log('Connection error. ', error);
         });
 
-        socket.on('sendMessage', async (data: { prompt: string, messageId: string }) => {
-            const { prompt, messageId } = data;
+        socket.on('sendMessage', async (data: { history: Message[], messageId: string }) => {
+            const { history, messageId } = data;
+
+            const ollamaSendMsg: OllamaMessage[] = history.map(msg => ({
+                role: msg.role,
+                content: msg.content
+            }))
 
             // Ollama Stream Logic
             try {
-                const ollamaStreamResponse = await fetch('http://localhost:11434/api/generate', {
+                const ollamaStreamResponse = await fetch('http://localhost:11434/api/chat', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         model: 'gemma:2b',
-                        prompt: prompt,
+                        messages: ollamaSendMsg,
                         stream: true,
                     }),
                 });
@@ -51,7 +57,7 @@ const socketHandler = (httpServer: HttpServer) => {
 
                             try {
                                 const data = JSON.parse(line);
-                                const content = data.response || '';
+                                const content = data.message?.content || '';
 
                                 if (content) {
                                     socket.emit('streamChunk', { content: content, id: messageId });
